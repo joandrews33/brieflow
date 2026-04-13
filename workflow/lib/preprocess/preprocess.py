@@ -22,7 +22,7 @@ import gc
 
 
 # Data organization and format constants
-DATA_FORMATS = {"nd2", "tiff",'ims'}
+DATA_FORMATS = {"nd2", "tiff", "ims"}
 DATA_ORGANIZATIONS = {"tile", "well"}
 
 
@@ -316,8 +316,8 @@ def _extract_ims_per_file_metadata(ims_file):
     return pd.DataFrame([{
         "filename": Path(ims_file).name,
         "tile": int(ims_file.split('.ims')[0].split('F')[-1]),
-        "x_position": float(md_dict['DataSetInfo']['CustomData']['@attrs'].get('XPosition', None)),
-        "y_position": float(md_dict['DataSetInfo']['CustomData']['@attrs'].get('YPosition', None)),
+        "x_pos": float(md_dict['DataSetInfo']['CustomData']['@attrs'].get('XPosition', None)),
+        "y_pos": float(md_dict['DataSetInfo']['CustomData']['@attrs'].get('YPosition', None)),
         "x_binning": int(md_dict['DataSetInfo']['CustomData']['@attrs'].get('BinningX', None)),
         "y_binning": int(md_dict['DataSetInfo']['CustomData']['@attrs'].get('BinningY', None)),
         "lens_magnification": float(md_dict['DataSetInfo']['Image']['@attrs'].get('LensPower', None)),
@@ -334,6 +334,7 @@ def extract_metadata_ims(
     cycle: Union[int, str] = None,
     round: Union[int, str] = None,
     metadata_file_path: str = None,
+    rescale_positions: float = 1000,
     verbose: bool = False,
 ) -> "pd.DataFrame":
     """Extract metadata from one or more Imaris .ims files and optional Fusion plaintext metadata.
@@ -355,6 +356,7 @@ def extract_metadata_ims(
     - plate, well, tile, cycle, round: optional user-provided provenance values applied to all rows.
     - metadata_file_path: optional path to a Fusion/Andor plaintext metadata file that may contain
       pixel sizes and lens magnification values.
+    - rescale_positions: factor to convert stage positions from mm to µm (default 1000).
     - verbose: print progress / parsed values.
 
     Notes / behavior:
@@ -382,6 +384,13 @@ def extract_metadata_ims(
         df_meta['effective_magnification_y'] = df_meta['lens_magnification'].fillna(1) * df_meta['y_binning'].fillna(1)
         #Commenting because I can't get pixel_size_x because I removed the txt metadata parsing from this version.
         #df_meta['pixel_size_y'] = df_meta.apply(lambda row: row['pixel_size_y'] / row['effective_magnification_y'] if row['lens_magnification'] else row['pixel_size_y'], axis=1)
+
+    df_meta['x_pos'] = df_meta['x_pos'].apply(lambda x: x * rescale_positions if pd.notna(rescale_positions) else x)
+    df_meta['y_pos'] = df_meta['y_pos'].apply(lambda x: x * rescale_positions if pd.notna(rescale_positions) else x)
+
+    if plate is not None:
+        df_meta['plate'] = plate
+
 
     return df_meta
 
