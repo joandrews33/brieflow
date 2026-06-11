@@ -27,6 +27,7 @@ phenotype_transformed = validate_dtypes(
 plate = snakemake.params.plate
 well = snakemake.params.well
 threshold = snakemake.params.threshold
+transform_model = getattr(snakemake.params, "transform_model", "linear")
 
 print(f"Processing Plate {plate}, Well {well}")
 print(
@@ -49,6 +50,7 @@ print(
 
 # Load alignment and find matches
 alignment = load_alignment_parameters(alignment_params.iloc[0])
+alignment["transform_model"] = transform_model
 print(
     f"Using {alignment.get('approach', 'unknown')} alignment (score: {alignment.get('score', 0):.3f})"
 )
@@ -69,6 +71,24 @@ final_matches = build_final_matches(
     plate=plate,
     well=well,
 )
+
+# DAPI validation (optional post-filter)
+dapi_validation = getattr(snakemake.params, "dapi_validation", False)
+if dapi_validation and not final_matches.empty:
+    from lib.merge.dapi_validation import validate_stitch_matches_dapi
+
+    final_matches, dapi_stats = validate_stitch_matches_dapi(
+        final_matches,
+        root_fp=snakemake.params.root_fp,
+        plate=plate,
+        well=well,
+        phenotype_dapi_index=snakemake.params.phenotype_dapi_index,
+        sbs_dapi_index=snakemake.params.sbs_dapi_index,
+        sbs_dapi_cycle=snakemake.params.sbs_dapi_cycle,
+        min_correlation=getattr(snakemake.params, "dapi_min_correlation", 0.5),
+        crop_size=getattr(snakemake.params, "dapi_crop_size", 32),
+    )
+    print(f"After DAPI validation: {len(final_matches)} cells")
 
 # Save outputs
 final_matches.to_parquet(str(snakemake.output.raw_matches))

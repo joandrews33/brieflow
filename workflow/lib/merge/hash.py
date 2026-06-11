@@ -227,7 +227,8 @@ def initial_alignment(well_triangles_0, well_triangles_1, initial_sites=8):
 
 
 def evaluate_match(
-    vec_centers_0, vec_centers_1, threshold_triangle=0.3, threshold_point=2
+    vec_centers_0, vec_centers_1, threshold_triangle=0.3, threshold_point=2,
+    transform_model="linear",
 ):
     """Evaluates the match between two sets of vectors and centers.
 
@@ -238,13 +239,26 @@ def evaluate_match(
         vec_centers_1 (pandas.DataFrame): DataFrame containing the second set of vectors and centers.
         threshold_triangle (float, optional): Threshold for matching triangles. Defaults to 0.3.
         threshold_point (float, optional): Threshold for matching points. Defaults to 2.
+        transform_model (str, optional): Transform model type. "linear" (default) uses
+            LinearRegression inside RANSAC. "polynomial2" uses degree-2 polynomial RANSAC.
 
     Returns:
         tuple:
-            - numpy.ndarray: Rotation matrix of the transformation.
-            - numpy.ndarray: Translation vector of the transformation.
+            - numpy.ndarray or dict: Rotation matrix (linear) or serialized polynomial model dict.
+            - numpy.ndarray or None: Translation vector (linear) or None (polynomial).
             - float: Score of the transformation based on the matching points.
     """
+    if transform_model == "polynomial2":
+        from lib.merge.polynomial_transform import evaluate_match_polynomial
+        model, score, determinant = evaluate_match_polynomial(
+            vec_centers_0, vec_centers_1,
+            threshold_triangle=threshold_triangle,
+            threshold_point=threshold_point,
+        )
+        if model is None:
+            return None, None, -1
+        return model.to_dict(), None, score
+
     V_0, c_0 = get_vc(
         vec_centers_0
     )  # Extract vectors and centers from the first DataFrame
@@ -339,6 +353,7 @@ def multistep_alignment(
     initial_sites=8,
     batch_size=180,
     n_jobs=None,
+    transform_model="linear",
 ):
     """Find tiles of two different acquisitions with matching Delaunay triangulations within the same well.
 
@@ -375,8 +390,21 @@ def multistep_alignment(
 
     # Define a function to work on individual (tile,site) pairs
     def work_on(tiles_df, sites_df):
-        rotation, translation, score = evaluate_match(tiles_df, sites_df)
-        determinant = None if rotation is None else np.linalg.det(rotation)
+        rotation, translation, score = evaluate_match(
+            tiles_df, sites_df, transform_model=transform_model,
+        )
+        if rotation is None:
+            determinant = None
+        elif transform_model == "polynomial2":
+            from lib.merge.polynomial_transform import (
+                PolynomialTransformModel,
+                compute_jacobian_determinant,
+            )
+            model = PolynomialTransformModel.from_dict(rotation)
+            centroid = tiles_df.filter(like="c").mean().values[:2]
+            determinant = compute_jacobian_determinant(model, centroid)
+        else:
+            determinant = np.linalg.det(rotation)
         result = pd.Series(
             {
                 "rotation": rotation,

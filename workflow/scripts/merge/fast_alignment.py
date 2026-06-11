@@ -139,6 +139,9 @@ if len(candidate_pairs) > 5 and len(valid_pairs_df) < 5:
 initial_sites = valid_pairs_df[["tile", "site"]].astype(int).values.tolist()
 print(f"{len(initial_sites)} initial sites passed thresholds")
 
+# Get transform model type
+transform_model = getattr(snakemake.params, "transform_model", "linear")
+
 # Perform multistep alignment for well
 well_alignment = multistep_alignment(
     phenotype_info_hash,
@@ -149,18 +152,30 @@ well_alignment = multistep_alignment(
     score=snakemake.params.score,
     initial_sites=initial_sites,
     n_jobs=snakemake.threads,
+    transform_model=transform_model,
 )
 
 # Reset index
 well_alignment.reset_index(drop=True, inplace=True)
 
-# Parse rotation into 2 columns
-well_alignment["rotation_1"] = well_alignment["rotation"].apply(
-    lambda r: extract_rotation(r, 1)
-)
-well_alignment["rotation_2"] = well_alignment["rotation"].apply(
-    lambda r: extract_rotation(r, 2)
-)
+# Store transform_model type
+well_alignment["transform_model"] = transform_model
+
+if transform_model == "polynomial2":
+    import json
+    # Store polynomial model params as JSON string
+    well_alignment["rotation_1"] = well_alignment["rotation"].apply(
+        lambda r: json.dumps(r) if isinstance(r, dict) else "[]"
+    )
+    well_alignment["rotation_2"] = ""
+else:
+    # Parse rotation into 2 columns (linear approach)
+    well_alignment["rotation_1"] = well_alignment["rotation"].apply(
+        lambda r: extract_rotation(r, 1)
+    )
+    well_alignment["rotation_2"] = well_alignment["rotation"].apply(
+        lambda r: extract_rotation(r, 2)
+    )
 well_alignment.drop(columns=["rotation"], inplace=True)
 
 # Add metadata to alignment data

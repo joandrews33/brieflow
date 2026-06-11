@@ -25,6 +25,7 @@ if merge_approach == "fast":
             alignment_flip_x=config["merge"].get("alignment_flip_x"),
             alignment_flip_y=config["merge"].get("alignment_flip_y"),
             alignment_rotate_90=config["merge"].get("alignment_rotate_90"),
+            transform_model=config["merge"].get("transform_model", "linear"),
         script:
             "../scripts/merge/fast_alignment.py"
 
@@ -39,6 +40,14 @@ if merge_approach == "fast":
             det_range=config["merge"]["det_range"],
             score=config["merge"]["score"],
             threshold=config["merge"]["threshold"],
+            transform_model=config["merge"].get("transform_model", "linear"),
+            dapi_validation=config["merge"].get("dapi_validation", False),
+            dapi_min_correlation=config["merge"].get("dapi_min_correlation", 0.5),
+            dapi_crop_size=config["merge"].get("dapi_crop_size", 32),
+            phenotype_dapi_index=config.get("phenotype", {}).get("dapi_index", 0),
+            sbs_dapi_index=config.get("sbs", {}).get("dapi_index", 0),
+            sbs_dapi_cycle=config.get("sbs", {}).get("dapi_cycle", 1),
+            root_fp=config["all"]["root_fp"],
         script:
             "../scripts/merge/fast_merge.py"
 
@@ -173,6 +182,7 @@ if merge_approach == "stitch":
             plate=lambda wildcards: wildcards.plate,
             well=lambda wildcards: wildcards.well,
             score=config["merge"]["score"],
+            transform_model=config["merge"].get("transform_model", "linear"),
         script:
             "../scripts/merge/stitch_alignment.py"
 
@@ -192,6 +202,14 @@ if merge_approach == "stitch":
             well=lambda wildcards: wildcards.well,
             threshold=config["merge"]["threshold"],
             score=config["merge"]["score"],
+            transform_model=config["merge"].get("transform_model", "linear"),
+            dapi_validation=config["merge"].get("dapi_validation", False),
+            dapi_min_correlation=config["merge"].get("dapi_min_correlation", 0.5),
+            dapi_crop_size=config["merge"].get("dapi_crop_size", 32),
+            phenotype_dapi_index=config.get("phenotype", {}).get("dapi_index", 0),
+            sbs_dapi_index=config.get("sbs", {}).get("dapi_index", 0),
+            sbs_dapi_cycle=config.get("sbs", {}).get("dapi_cycle", 1),
+            root_fp=config["all"]["root_fp"],
         script:
             "../scripts/merge/stitch_merge.py"
 

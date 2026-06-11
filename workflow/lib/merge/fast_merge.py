@@ -6,7 +6,8 @@ from scipy.spatial.distance import cdist
 from sklearn.linear_model import LinearRegression
 
 
-def merge_triangle_hash(hash_df_0, hash_df_1, alignment, threshold=2):
+def merge_triangle_hash(hash_df_0, hash_df_1, alignment, threshold=2,
+                        transform_model="linear"):
     """Merges two DataFrames using triangle hashing after images at different magnifications have been hashed together.
 
     Args:
@@ -14,6 +15,7 @@ def merge_triangle_hash(hash_df_0, hash_df_1, alignment, threshold=2):
         hash_df_1 (pandas.DataFrame): The second DataFrame.
         alignment (dict): Alignment parameters containing rotation and translation.
         threshold (int): The threshold value. Defaults to 2.
+        transform_model (str): "linear" or "polynomial2".
 
     Returns:
         pandas.DataFrame: The merged DataFrame.
@@ -21,8 +23,11 @@ def merge_triangle_hash(hash_df_0, hash_df_1, alignment, threshold=2):
     # Rename 'tile' column to 'site' in hash_df_1
     hash_df_1 = hash_df_1.rename(columns={"tile": "site"})
 
-    # Build linear model
-    model = build_linear_model(alignment["rotation"], alignment["translation"])
+    if transform_model == "polynomial2":
+        from lib.merge.polynomial_transform import PolynomialTransformModel
+        model = PolynomialTransformModel.from_dict(alignment["rotation"])
+    else:
+        model = build_linear_model(alignment["rotation"], alignment["translation"])
 
     # Merge dataframes using triangle hashing
     return merge_sbs_phenotype(hash_df_0, hash_df_1, model, threshold=threshold)

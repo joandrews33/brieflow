@@ -34,6 +34,7 @@ print(f"SBS cells: {len(sbs_positions):,}")
 
 # Run alignment workflow
 try:
+    transform_model = getattr(snakemake.params, "transform_model", "linear")
     result = align_well_positions(
         phenotype_positions=phenotype_positions,
         sbs_positions=sbs_positions,
@@ -44,6 +45,7 @@ try:
         min_triangles=100,
         threshold_triangle=0.3,
         threshold_point=2.0,
+        transform_model=transform_model,
     )
 
     # Extract results

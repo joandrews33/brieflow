@@ -479,6 +479,8 @@ def extract_metadata_tiff(
                     "X",
                     "stage_x",
                     "Stage_X",
+                    "stage_x_um",
+                    "Stage_X_um",
                 ],
                 # Y coordinate mappings
                 "y_pos": [
@@ -494,6 +496,8 @@ def extract_metadata_tiff(
                     "Y",
                     "stage_y",
                     "Stage_Y",
+                    "stage_y_um",
+                    "Stage_Y_um",
                 ],
                 # Z coordinate mappings
                 "z_pos": [
@@ -509,6 +513,8 @@ def extract_metadata_tiff(
                     "Z",
                     "stage_z",
                     "Stage_Z",
+                    "stage_z_um",
+                    "Stage_Z_um",
                 ],
                 # Other metadata mappings
                 "pixel_size_x": ["pixel_size_x", "PixelSizeX", "pixel_x", "Pixel_X"],
@@ -575,6 +581,11 @@ def extract_metadata_tiff(
                 tile_col = find_column("tile")
 
                 extracted_well = row[well_col] if well_col else well
+                if extracted_well is None and "position_name" in metadata_df.columns:
+                    import re as _re
+                    _m = _re.match(r"([A-Z]\d+)_", str(row["position_name"]))
+                    if _m:
+                        extracted_well = _m.group(1)
                 extracted_tile = row[tile_col] if tile_col else idx
 
                 # Extract other metadata fields

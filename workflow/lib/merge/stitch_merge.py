@@ -97,7 +97,7 @@ def load_alignment_parameters(alignment_row: pd.Series) -> Dict[str, Any]:
     # Extract scale factor
     scale_factor = float(alignment_row.get("scale_factor", 1.0))
 
-    return {
+    result = {
         "rotation": rotation,
         "translation": translation,
         "scale_factor": scale_factor,
@@ -109,6 +109,20 @@ def load_alignment_parameters(alignment_row: pd.Series) -> Dict[str, Any]:
             alignment_row.get("validation_mean_distance", 0.0)
         ),
     }
+
+    # Load polynomial model if present
+    polynomial_model_data = alignment_row.get("polynomial_model_json", None)
+    if polynomial_model_data is not None and isinstance(polynomial_model_data, str):
+        import json
+        from lib.merge.polynomial_transform import PolynomialTransformModel
+        result["polynomial_model"] = PolynomialTransformModel.from_dict(
+            json.loads(polynomial_model_data)
+        )
+        result["transform_model"] = "polynomial2"
+    else:
+        result["transform_model"] = str(alignment_row.get("transform_model", "linear"))
+
+    return result
 
 
 def find_cell_matches(
@@ -147,6 +161,11 @@ def find_cell_matches(
         if verbose:
             print("Using pre-calculated transformed coordinates")
         transformed_coords = transformed_phenotype_positions[["i", "j"]].values
+    elif alignment.get("transform_model") == "polynomial2" and "polynomial_model" in alignment:
+        if verbose:
+            print("Calculating transformed coordinates (polynomial)")
+        pheno_coords = phenotype_positions[["i", "j"]].values
+        transformed_coords = alignment["polynomial_model"].predict(pheno_coords)
     else:
         if verbose:
             print("Calculating transformed coordinates")

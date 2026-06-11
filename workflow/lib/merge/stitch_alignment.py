@@ -39,6 +39,7 @@ def align_well_positions(
     min_triangles: int = 100,
     threshold_triangle: float = 0.3,
     threshold_point: float = 2.0,
+    transform_model: str = "linear",
 ) -> Dict[str, Any]:
     """Complete well-level alignment pipeline.
 
@@ -130,6 +131,7 @@ def align_well_positions(
         min_triangles=min_triangles,
         threshold_triangle=threshold_triangle,
         threshold_point=threshold_point,
+        transform_model=transform_model,
     )
 
     # Step 4: Validate and finalize
@@ -163,14 +165,22 @@ def align_well_positions(
     rotation = best_alignment.get("rotation", np.eye(2))
     translation = best_alignment.get("translation", np.array([0.0, 0.0]))
 
-    if not isinstance(rotation, np.ndarray):
+    if transform_model == "polynomial2" and "polynomial_model" in best_alignment:
+        poly_model = best_alignment["polynomial_model"]
+        phenotype_transformed = _apply_polynomial_transformation(
+            phenotype_scaled, poly_model
+        )
+        # Use identity rotation/translation for metadata
         rotation = np.eye(2)
-    if not isinstance(translation, np.ndarray):
         translation = np.array([0.0, 0.0])
-
-    phenotype_transformed = _apply_transformation(
-        phenotype_scaled, rotation, translation
-    )
+    else:
+        if not isinstance(rotation, np.ndarray):
+            rotation = np.eye(2)
+        if not isinstance(translation, np.ndarray):
+            translation = np.array([0.0, 0.0])
+        phenotype_transformed = _apply_transformation(
+            phenotype_scaled, rotation, translation
+        )
 
     print(f"Applied transformation:")
     print(f"  Determinant: {np.linalg.det(rotation):.6f}")
@@ -387,6 +397,7 @@ def evaluate_well_match(
     vec_centers_1: pd.DataFrame,
     threshold_triangle: float = 0.3,
     threshold_point: float = 2.0,
+    transform_model: str = "linear",
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], float]:
     """Evaluate alignment match using triangle hash features and RANSAC.
 
@@ -405,7 +416,19 @@ def evaluate_well_match(
         - rotation_matrix: 2x2 rotation/scaling matrix, None if failed
         - translation_vector: 2D translation vector, None if failed
         - alignment_score: Quality score (0-1), -1 if failed
+
+        For polynomial2, returns (polynomial_model, None, score) where
+        polynomial_model is a PolynomialTransformModel instance.
     """
+    if transform_model == "polynomial2":
+        from lib.merge.polynomial_transform import evaluate_match_polynomial
+        model, score, determinant = evaluate_match_polynomial(
+            vec_centers_0, vec_centers_1,
+            threshold_triangle=threshold_triangle,
+            threshold_point=threshold_point,
+        )
+        return model, None, score
+
     V_0, c_0 = get_vc(vec_centers_0)
     V_1, c_1 = get_vc(vec_centers_1)
     i0, i1, distances = nearest_neighbors(V_0, V_1)
@@ -456,6 +479,7 @@ def _adaptive_regional_alignment(
     min_triangles: int,
     threshold_triangle: float,
     threshold_point: float,
+    transform_model: str = "linear",
 ) -> Optional[pd.DataFrame]:
     """Perform adaptive regional triangle hash alignment.
 
@@ -516,6 +540,7 @@ def _adaptive_regional_alignment(
             sbs_triangles,
             threshold_triangle=threshold_triangle,
             threshold_point=threshold_point,
+            transform_model=transform_model,
         )
 
         if rotation is None or calculated_score < score_threshold:
@@ -526,7 +551,14 @@ def _adaptive_regional_alignment(
             continue
 
         # Success!
-        determinant = np.linalg.det(rotation)
+        if transform_model == "polynomial2":
+            from lib.merge.polynomial_transform import compute_jacobian_determinant
+            centroid = np.array([
+                pheno_triangles[["c_0", "c_1"]].mean().values
+            ])
+            determinant = compute_jacobian_determinant(rotation, centroid[0])
+        else:
+            determinant = np.linalg.det(rotation)
 
         print(f"Regional triangle hash alignment successful:")
         print(f"   Score: {calculated_score:.3f} (threshold: {score_threshold})")
@@ -535,8 +567,8 @@ def _adaptive_regional_alignment(
 
         # Build result
         alignment = {
-            "rotation": rotation,
-            "translation": translation,
+            "rotation": rotation if transform_model != "polynomial2" else np.eye(2),
+            "translation": translation if translation is not None else np.array([0.0, 0.0]),
             "score": calculated_score,
             "determinant": determinant,
             "transformation_type": "triangle_hash_regional",
@@ -546,6 +578,8 @@ def _adaptive_regional_alignment(
             "attempts": attempts,
             "final_region_size": region_size,
         }
+        if transform_model == "polynomial2":
+            alignment["polynomial_model"] = rotation
 
         return pd.DataFrame([alignment])
 
@@ -666,6 +700,27 @@ def _apply_transformation(
     return transformed
 
 
+def _apply_polynomial_transformation(
+    positions: pd.DataFrame,
+    polynomial_model,
+) -> pd.DataFrame:
+    """Apply polynomial transformation to coordinates.
+
+    Args:
+        positions: DataFrame with 'i', 'j' columns
+        polynomial_model: PolynomialTransformModel with .predict(X) interface
+
+    Returns:
+        DataFrame with transformed coordinates
+    """
+    transformed = positions.copy()
+    coords = positions[["i", "j"]].values
+    transformed_coords = polynomial_model.predict(coords)
+    transformed["i"] = transformed_coords[:, 0]
+    transformed["j"] = transformed_coords[:, 1]
+    return transformed
+
+
 def _prepare_alignment_params(
     rotation: np.ndarray,
     translation: np.ndarray,
@@ -706,6 +761,15 @@ def _prepare_alignment_params(
         ),
         "has_overlap": bool(best_alignment.get("has_overlap", True)),
     }
+
+    # Serialize polynomial model if present
+    poly_model = best_alignment.get("polynomial_model", None)
+    if poly_model is not None and hasattr(poly_model, "to_dict"):
+        import json
+        params["polynomial_model_json"] = json.dumps(poly_model.to_dict())
+        params["transform_model"] = "polynomial2"
+    else:
+        params["transform_model"] = "linear"
 
     return pd.DataFrame([params])
 
